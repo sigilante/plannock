@@ -122,4 +122,56 @@ Two non-obvious pitfalls surfaced building this on a 408k pill:
 2. Wet list gates (`snag`/`slag`/`rear`) over a list whose *element* type is
    recursive blow up the same mull. Destructure with plain `?~` /
    head-tail wings instead.
-```
+
+## Shortfalls & limitations
+
+Read before relying on either lib. Nothing here is a silent
+approximation — every gap below fails loud (crashes) rather than
+returning a wrong value, except where noted as performance-only.
+
+### Evaluator (`lib/plan`)
+
+- **Inherited semantic deltas** (from nockplan, vs the marduk oracle):
+  no shared-heap memoisation (performance only, values unaffected);
+  letrec is threaded functionally, so *productive cyclic* letrec crashes
+  on a stale hole where marduk's mutable heap would resolve it; law
+  construction skips the build-time spine-forcing walk, which changes
+  crash *timing* (surfaces at first use) but never values.
+- **BPLAN coverage is the fixture subset only.** Implemented: `Inc Dec
+  Pin` / `Add Sub Mul Eq Le Lt Gt Ge Ne` / `Law If Ifz Case2` / `Case3`
+  / `Elim`. **Not** implemented — and present in `output.plan`: `Div`,
+  `Mod`, `Lsh`, `Rsh`, `Bex`, `Seq`, and any other named op. An unknown
+  op crashes rather than reducing.
+- **No trampoline.** `whnf`/`norm` recurse on the host Nock stack, so
+  extremely deep PLAN recursion can exhaust the runtime stack — the
+  analogue of nockplan's Python deep-recursion caveat.
+- **Opaque failures.** Malformed values fail with a bare `!!`; there are
+  no source locations or messages, since PLAN values carry none.
+
+### Text front-end (`lib/plan-asm`)
+
+- **Not byte-faithful Plan-Asm.** Missing `#app`/`#macro`/`#export`/
+  `#juxt`, the `natE`/`(1 n)` literal wrapping, and the raw `0`-tagged
+  apply convention (bare `0` = ref 0). It will **not** round-trip
+  `output.plan` verbatim — it is a friendlier surface over the same value
+  model, not the reference reader.
+- **`#law` letrec bindings are ignored.** Only `tag`, `sig`, and `body`
+  compile; any forms between the sig and the body (the letrec binds) are
+  dropped. Multi-binding letrec laws are unsupported.
+- **Only `()` lists.** `{}` (curl) and `[]` (brak) are not handled and
+  will fail to parse.
+- **`#pin` content is evaluated structurally, not deep-forced.** Reaver's
+  `mkPin` forces to normal form; here a pin wrapping a reducible
+  application is left unreduced.
+- **No diagnostics.** Parse/compile errors crash without location; `read`
+  must consume the entire input (trailing garbage fails).
+
+### Validation
+
+- Checked against nockplan's **documented** expected values, not a live
+  `marduk` oracle (marduk is not vendored in this repo). An independent
+  oracle cross-check is future work.
+- Exercised on the `urbit-408k-rc1` **fakezod** only; not yet run under
+  production Vere or Ares.
+- `tests/plan.hoon` is build-and-inspect (`=t -build-file …`, then
+  `ok:t`); it is not wired into a `-test` / CI harness.
