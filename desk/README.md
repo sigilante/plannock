@@ -72,4 +72,54 @@ Ported behaviour was checked against nockplan's own unit cases on a fakezod
 - **recursion** (native): a factorial law computes `fact 3=6`, `fact 5=120`,
   `fact 0=1` — letrec + `If`-laziness + self-reference together
 - **noun bridge**: `from-noun (to-noun v)` is identity
+
+## lib/plan-asm — a text front-end
+
+`lib/plan-asm.hoon` is a two-stage assembler mirroring reaver's
+`PlanAssembler.hs`:
+
+- `+read  text -> (list sexp)` — the generic S-expression reader (gaps,
+  `;`-comments, `(…)` lists, decimal/string/symbol atoms).
+- `+load  text -> [val env]`  — macroexpand + compile: `#bind` fills a
+  global symbol table, `#pin` pins, and `#law` compiles a body to
+  ref-encoded `+val` (a bound symbol → its ref index, a bare literal →
+  quoted `(0 n)`, an application → apply-node `(0 f x)`, a free symbol →
+  quoted global constant).
+
+Surface subset (a clean, fully-specified dialect):
+
+```
+42                              a literal nat
+"abc"                           a string (LSB-first cord nat)
+name                            symbol: ref in a body, else a global
+_0 _1 ...                       explicit refs in a body (_0 = the law)
+(f x y)                         application
+(#pin v)                        a pin
+(#law tag (_0 _1 ..) body)      a law; arity = #args after self
+(#bind name v)                  bind name in the global env
+```
+
+This is **not** byte-faithful Plan-Asm — that additionally needs
+`#app`/`#macro`/`#export`/`#juxt`, the `natE`/`(1 n)` literal wrapping, and
+the explicit `0`-tagged apply convention (bare `0` = ref 0, not literal).
+The subset above is a friendlier surface over the same value model.
+
+Validated on the fakezod (`text → load → norm:plan`):
+
+- reader: `(a (b 42) c)` → the expected nested S-expression
+- `(twice 7)` with `twice = \n. id (id n)` → `7` (globals embedded in a body,
+  apply-node encoding)
+- `(ap5 id)` with `ap5 = \n. (n 5)` → `5` (literal quoting inside a body)
+- `(k 7 99)` with `k = {107 2 _1}` → `7` (multi-arg law, refs)
+
+### Hoon notes (recursive-parser gotchas)
+
+Two non-obvious pitfalls surfaced building this on a 408k pill:
+
+1. A recursive `+$` whose recursion goes through `(list sexp)` sends the
+   mull into an infinite grow **unless** you pin the mold's default with an
+   explicit `$~` (here `$~ [%n 0]`).
+2. Wet list gates (`snag`/`slag`/`rear`) over a list whose *element* type is
+   recursive blow up the same mull. Destructure with plain `?~` /
+   head-tail wings instead.
 ```
